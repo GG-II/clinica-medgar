@@ -23,8 +23,9 @@ def create_app(config_name='development'):
     # Inicializar extensiones
     init_extensions(app)
     
-    # Registrar blueprints (rutas)
-    app.register_blueprint(auth_bp)
+    # Registrar blueprints (NUEVO - usar la función centralizada)
+    from app.routes import register_blueprints
+    register_blueprints(app)
     
     # Manejador de errores 404
     @app.errorhandler(404)

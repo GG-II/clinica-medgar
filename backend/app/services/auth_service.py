@@ -41,8 +41,8 @@ class AuthService:
         db.session.commit()
         
         # Crear tokens JWT
-        access_token = create_access_token(identity=usuario.id)
-        refresh_token = create_refresh_token(identity=usuario.id)
+        access_token = create_access_token(identity=str(usuario.id))
+        refresh_token = create_refresh_token(identity=str(usuario.id))
         
         # Registrar en auditoría
         ip_address = request.remote_addr if request else None
