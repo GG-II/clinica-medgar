@@ -80,7 +80,7 @@ def obtener_receta(id):
 
 @bp.route('', methods=['POST'])
 @jwt_required()
-@role_required('medico')
+@role_required('medico', 'administrador')
 def crear_receta():
     """
     Crea una nueva receta
@@ -129,27 +129,37 @@ def crear_receta():
                 }), 400
         
         # Crear receta usando el servicio
-        receta, error = RecetaService.crear_receta(data, usuario_id)
+        resultado = RecetaService.crear_receta(
+            paciente_id=data['paciente_id'],
+            medico_id=data['medico_id'],
+            diagnostico=data.get('diagnostico'),
+            indicaciones_generales=data.get('indicaciones_generales'),
+            medicamentos_lista=data['medicamentos'],
+            consulta_id=data.get('consulta_id')
+        )
         
-        if error:
-            # Si hay alertas de alergias, retornar warning pero con éxito
-            if '⚠️ ALERTAS' in error:
-                return jsonify({
-                    'success': True,
-                    'warning': error,
-                    'message': 'Receta creada con alertas',
-                    'data': receta.to_dict(include_medicamentos=True)
-                }), 201
-            else:
-                return jsonify({
-                    'success': False,
-                    'message': error
-                }), 400
+        receta = resultado['receta']
+        alertas = resultado.get('alertas', [])
+        
+        # Convertir la receta a diccionario
+        receta_dict = receta.to_dict(include_medicamentos=True)
+        
+        # Si hay alertas, retornar warning pero con éxito
+        if alertas:
+            warning = '⚠️ ALERTAS DE ALERGIAS:\n' + '\n'.join([
+                f"- {alerta['mensaje']}" for alerta in alertas
+            ])
+            return jsonify({
+                'success': True,
+                'warning': warning,
+                'message': 'Receta creada con alertas',
+                'data': receta_dict
+            }), 201
         
         return jsonify({
             'success': True,
             'message': 'Receta creada exitosamente',
-            'data': receta.to_dict(include_medicamentos=True)
+            'data': receta_dict
         }), 201
         
     except Exception as e:

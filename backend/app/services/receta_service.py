@@ -67,7 +67,7 @@ class RecetaService:
         db.session.commit()
         
         return {
-            'receta': receta.to_dict(incluir_relaciones=True),
+            'receta': receta,
             'alertas': alertas
         }
     
@@ -187,7 +187,7 @@ class RecetaService:
         
         # Medicamentos
         contador = 1
-        for detalle in receta.detalles:
+        for detalle in receta.medicamentos:
             med = detalle.medicamento
             
             med_text = f"<b>{contador}. {med.nombre_generico}"
@@ -254,4 +254,4 @@ class RecetaService:
         
         recetas = query.order_by(Receta.fecha_emision.desc()).all()
         
-        return [r.to_dict(incluir_relaciones=True) for r in recetas]
+        return recetas

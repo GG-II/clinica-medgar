@@ -46,7 +46,7 @@ class Receta(db.Model):
             'paciente': {
                 'id': self.paciente.id,
                 'nombre_completo': self.paciente.nombre_completo,
-                'edad': self.paciente.edad,
+                'edad': self.paciente.calcular_edad() if hasattr(self.paciente, 'calcular_edad') else None,
                 'dpi': self.paciente.dpi
             } if self.paciente else None,
             'medico': {
