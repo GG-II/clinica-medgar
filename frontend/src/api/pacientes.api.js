@@ -57,19 +57,40 @@ export const pacientesAPI = {
   },
 
   // ==========================================
-  // BÚSQUEDA Y FILTROS
-  // ==========================================
+// BÚSQUEDA Y FILTROS
+// ==========================================
 
-  /**
-   * Búsqueda rápida de pacientes (para autocomplete)
-   * @param {string} query - Término de búsqueda
-   * @returns {Promise} Response con lista de pacientes coincidentes
-   */
-  search(query) {
-    return axios.get('/pacientes/buscar', { 
-      params: { q: query } 
-    })
-  },
+/**
+ * Obtener lista de pacientes con paginación y filtros
+ * @param {Object} params - Parámetros de búsqueda
+ * @param {number} params.page - Número de página (default: 1)
+ * @param {number} params.per_page - Items por página (default: 20)
+ * @param {string} params.busqueda - Búsqueda por nombre, DPI o teléfono
+ * @param {string} params.ordenar_por - Campo para ordenar
+ * @returns {Promise} Response con { pacientes, total, page, per_page }
+ */
+getAll(params = {}) {
+  // Mapear nombres del frontend al backend
+  const backendParams = {
+    page: params.page || 1,
+    per_page: params.per_page || params.perPage || 25,
+    busqueda: params.search || params.busqueda || '',
+    ordenar_por: params.ordenar_por || 'nombre_completo'
+  }
+  
+  return axios.get('/pacientes', { params: backendParams })
+},
+
+/**
+ * Búsqueda rápida de pacientes (para autocomplete)
+ * @param {string} query - Término de búsqueda
+ * @returns {Promise} Response con lista de pacientes coincidentes
+ */
+search(query) {
+  return axios.get('/pacientes/buscar', { 
+    params: { termino: query }  // ✅ CORREGIDO: usa "termino"
+  })
+},
 
   /**
    * Obtener estadísticas de pacientes

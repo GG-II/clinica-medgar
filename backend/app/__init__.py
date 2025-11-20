@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from app.config import config
 from app.extensions import init_extensions, db
 # from app.routes import auth_bp  # ❌ ELIMINAR O COMENTAR ESTA LÍNEA
@@ -18,6 +18,8 @@ def create_app(config_name='development'):
     
     # Cargar configuración
     app.config.from_object(config[config_name])
+
+    
     
     # Inicializar extensiones
     init_extensions(app)
@@ -25,6 +27,27 @@ def create_app(config_name='development'):
     # Registrar blueprints (NUEVO - usar la función centralizada)
     from app.routes import register_blueprints
     register_blueprints(app)
+    
+    # ✅ AGREGAR ESTO - Manejo de preflight requests (CORS)
+    @app.before_request
+    def handle_preflight():
+        """Maneja las peticiones OPTIONS (preflight) de CORS"""
+        if request.method == "OPTIONS":
+            response = app.make_default_options_response()
+            headers = response.headers
+            
+            # Obtener el origen de la petición
+            origin = request.headers.get('Origin')
+            
+            # Verificar si el origen está permitido
+            if origin in app.config['CORS_ORIGINS']:
+                headers['Access-Control-Allow-Origin'] = origin
+                headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS, PATCH'
+                headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With'
+                headers['Access-Control-Allow-Credentials'] = 'true'
+                headers['Access-Control-Max-Age'] = '3600'
+            
+            return response
     
     # Manejador de errores 404
     @app.errorhandler(404)

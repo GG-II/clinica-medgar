@@ -75,41 +75,43 @@ export const usePacientesStore = defineStore('pacientes', () => {
   // ==========================================
 
   /**
-   * Obtener lista de pacientes con paginación
-   */
-  async function fetchPacientes(params = {}) {
-    loading.value = true
-    error.value = null
-    
-    try {
-      // Combinar parámetros de paginación y filtros
-      const queryParams = {
-        page: pagination.value.page,
-        per_page: pagination.value.perPage,
-        ...filters.value,
-        ...params
-      }
-      
-      const response = await pacientesAPI.getAll(queryParams)
-      
-      if (response.data.success) {
-        pacientes.value = response.data.data.pacientes
-        pagination.value = {
-          page: response.data.data.page,
-          perPage: response.data.data.per_page,
-          total: response.data.data.total,
-          totalPages: Math.ceil(response.data.data.total / response.data.data.per_page)
-        }
-      }
-      
-      return response.data
-    } catch (err) {
-      error.value = err.response?.data?.message || 'Error al cargar pacientes'
-      throw err
-    } finally {
-      loading.value = false
+ * Obtener lista de pacientes con paginación
+ */
+async function fetchPacientes(params = {}) {
+  loading.value = true
+  error.value = null
+  
+  try {
+    // Combinar parámetros de paginación y filtros
+    const queryParams = {
+      page: pagination.value.page,
+      per_page: pagination.value.perPage,
+      ...filters.value,
+      ...params
     }
+    
+    const response = await pacientesAPI.getAll(queryParams)
+    
+    if (response.data.success) {
+      // ✅ ACTUALIZAR: El backend devuelve la estructura dentro de "data"
+      const resultado = response.data.data
+      pacientes.value = resultado.pacientes
+      pagination.value = {
+        page: resultado.page,
+        perPage: resultado.per_page,
+        total: resultado.total,
+        totalPages: Math.ceil(resultado.total / resultado.per_page)
+      }
+    }
+    
+    return response.data
+  } catch (err) {
+    error.value = err.response?.data?.message || 'Error al cargar pacientes'
+    throw err
+  } finally {
+    loading.value = false
   }
+}
 
   /**
    * Obtener un paciente específico por ID
