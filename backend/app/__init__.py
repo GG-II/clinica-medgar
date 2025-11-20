@@ -1,8 +1,7 @@
 from flask import Flask, jsonify
 from app.config import config
 from app.extensions import init_extensions, db
-from app.routes import auth_bp
-
+# from app.routes import auth_bp  # ❌ ELIMINAR O COMENTAR ESTA LÍNEA
 
 def create_app(config_name='development'):
     """
@@ -66,7 +65,7 @@ def create_app(config_name='development'):
         return jsonify({
             'success': True,
             'message': 'API Clínica MEDGAR - Sistema de Gestión Clínica',
-            'version': '1.0.0',
+            'version': '1.0.0 - Fase 3',
             'status': 'running'
         })
     

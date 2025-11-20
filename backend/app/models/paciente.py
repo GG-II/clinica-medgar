@@ -63,6 +63,11 @@ class Paciente(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # === RELACIONES ===
+    # Nota: Las relaciones con historia_clinica, consultas, archivos y antecedentes
+    # ya están definidas automáticamente en esos modelos usando backref
+    citas = db.relationship('Cita', back_populates='paciente', lazy='dynamic', cascade='all, delete-orphan')    
+    
     def __repr__(self):
         """Representación del objeto para debugging"""
         return f'<Paciente {self.id}: {self.nombre_completo}>'
