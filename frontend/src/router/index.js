@@ -17,7 +17,40 @@ const routes = [
     name: 'Dashboard',
     component: () => import('@/views/Dashboard.vue'),
     meta: { requiresAuth: true }
-  }
+  },
+  // ✅ SOLO ESTA RUTA POR AHORA
+  {
+    path: '/pacientes',
+    name: 'Pacientes',
+    component: () => import('@/views/pacientes/PacientesList.vue'),
+    meta: { requiresAuth: true }
+  },
+  
+  // 🔴 COMENTADAS TEMPORALMENTE (descoméntalas cuando creemos los archivos)
+   {
+     path: '/pacientes/nuevo',
+     name: 'PacienteNuevo',
+     component: () => import('@/views/pacientes/PacienteNuevo.vue'),
+     meta: { requiresAuth: true }
+   },
+   {
+     path: '/pacientes/:id',
+     name: 'PacienteDetalle',
+     component: () => import('@/views/pacientes/PacienteDetalle.vue'),
+     meta: { requiresAuth: true }
+   },
+ {
+     path: '/pacientes/:id/editar',
+     name: 'PacienteEditar',
+     component: () => import('@/views/pacientes/PacienteEditar.vue'),
+     meta: { requiresAuth: true }
+   },
+  // {
+  //   path: '/pacientes/:id/historia',
+  //   name: 'HistoriaClinica',
+  //   component: () => import('@/views/historia/HistoriaClinica.vue'),
+  //   meta: { requiresAuth: true }
+  // }
 ]
 
 const router = createRouter({
