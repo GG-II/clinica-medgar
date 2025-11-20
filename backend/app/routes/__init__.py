@@ -30,6 +30,16 @@ def register_blueprints(app: Flask):
     from app.routes.laboratorios import bp as laboratorios_bp
     app.register_blueprint(laboratorios_bp)
     
+    # Fase 4: Hospitalización, Farmacia, Facturación
+    from app.routes.hospitalizacion import bp as hospitalizacion_bp
+    app.register_blueprint(hospitalizacion_bp)
+    
+    from app.routes.farmacia import bp as farmacia_bp
+    app.register_blueprint(farmacia_bp)
+    
+    from app.routes.facturacion import bp as facturacion_bp
+    app.register_blueprint(facturacion_bp)
+    
     print("✅ Blueprints registrados:")
     print("   - /api/auth (autenticación)")
     print("   - /api/pacientes (pacientes)")
@@ -38,3 +48,9 @@ def register_blueprints(app: Flask):
     print("   - /api/citas (citas y agenda)")
     print("   - /api/recetas (recetas médicas)")
     print("   - /api/laboratorios (laboratorios)")
+    print("   - /api/hospitalizacion (hospitalización)")
+    print("   - /api/farmacia (farmacia e inventario)")
+    print("   - /api/caja (caja y movimientos)")
+    print("   - /api/facturas (facturación)")
+    print("   - /api/convenios (convenios)")
+    print("   - /api/cuentas-por-cobrar (cuentas por cobrar)")

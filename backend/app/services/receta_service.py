@@ -1,383 +1,257 @@
 """
-Servicio de Recetas
-Lógica para generación de recetas médicas en PDF
+Servicio para generación de recetas médicas.
+Incluye: creación, validación de alergias, generación de PDF
 """
-from datetime import datetime, date
+
 from app.extensions import db
-from app.models import Receta, RecetaDetalle, Medicamento, Paciente, Usuario
-from app.models.auditoria import LogAuditoria
-import os
+from app.models import Receta, RecetaDetalle, Medicamento, Paciente, Usuario, Antecedente
+from datetime import datetime
+from io import BytesIO
 
-# Importar WeasyPrint para PDF (opcional)
-try:
-    from weasyprint import HTML, CSS
-    WEASYPRINT_DISPONIBLE = True
-except ImportError:
-    WEASYPRINT_DISPONIBLE = False
-    print("⚠️  WeasyPrint no está instalado. Instalar con: pip install weasyprint")
-
+# ReportLab para PDFs
+from reportlab.lib.pagesizes import letter
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 class RecetaService:
     """Servicio para gestión de recetas médicas"""
     
     @staticmethod
-    def crear_receta(data, usuario_id):
+    def crear_receta(paciente_id, medico_id, diagnostico, indicaciones_generales, 
+                     medicamentos_lista, consulta_id=None):
         """
-        Crea una nueva receta con sus medicamentos
+        Crea una nueva receta médica con sus medicamentos.
         
         Args:
-            data: {
-                'paciente_id': int,
-                'medico_id': int,
-                'consulta_id': int (opcional),
-                'diagnostico': str,
-                'indicaciones_generales': str,
-                'medicamentos': [
-                    {
-                        'medicamento_id': int,
-                        'dosis': str,
-                        'frecuencia': str,
-                        'duracion': str,
-                        'via_administracion': str,
-                        'indicaciones_especificas': str,
-                        'cantidad_prescrita': int
-                    }
-                ]
-            }
-            usuario_id: ID del usuario que crea
-        
-        Returns:
-            (Receta, str): (receta, error)
+            paciente_id: ID del paciente
+            medico_id: ID del médico
+            diagnostico: Diagnóstico del paciente
+            indicaciones_generales: Indicaciones adicionales
+            medicamentos_lista: Lista de diccionarios con medicamento_id, dosis, frecuencia, etc.
+            consulta_id: ID de la consulta (opcional)
         """
-        try:
-            # Validar paciente y médico
-            paciente = Paciente.query.get(data['paciente_id'])
-            if not paciente:
-                return None, "Paciente no encontrado"
-            
-            medico = Usuario.query.get(data['medico_id'])
-            if not medico or medico.rol != 'medico':
-                return None, "Médico no válido"
-            
-            # Crear receta
-            receta = Receta(
-                paciente_id=data['paciente_id'],
-                medico_id=data['medico_id'],
-                consulta_id=data.get('consulta_id'),
-                fecha_emision=date.today(),
-                diagnostico=data.get('diagnostico'),
-                indicaciones_generales=data.get('indicaciones_generales'),
-                activa=True
+        # Validar alergias
+        alertas = RecetaService._validar_alergias(paciente_id, medicamentos_lista)
+        
+        # Crear receta
+        receta = Receta(
+            paciente_id=paciente_id,
+            medico_id=medico_id,
+            consulta_id=consulta_id,
+            fecha_emision=datetime.now().date(),
+            indicaciones_generales=indicaciones_generales,
+            diagnostico=diagnostico,
+            activa=True
+        )
+        
+        db.session.add(receta)
+        db.session.flush()  # Para obtener el ID de la receta
+        
+        # Agregar detalles
+        for med_data in medicamentos_lista:
+            detalle = RecetaDetalle(
+                receta_id=receta.id,
+                medicamento_id=med_data['medicamento_id'],
+                dosis=med_data['dosis'],
+                frecuencia=med_data['frecuencia'],
+                duracion=med_data.get('duracion'),
+                via_administracion=med_data.get('via_administracion'),
+                indicaciones_especificas=med_data.get('indicaciones_especificas'),
+                cantidad_prescrita=med_data.get('cantidad_prescrita')
             )
+            db.session.add(detalle)
+        
+        db.session.commit()
+        
+        return {
+            'receta': receta.to_dict(incluir_relaciones=True),
+            'alertas': alertas
+        }
+    
+    @staticmethod
+    def _validar_alergias(paciente_id, medicamentos_lista):
+        """
+        Valida si algún medicamento tiene conflicto con las alergias del paciente.
+        """
+        alertas = []
+        
+        # Obtener alergias del paciente
+        alergias = Antecedente.query.filter_by(
+            paciente_id=paciente_id,
+            tipo='alergicos',
+            activo=True
+        ).all()
+        
+        if not alergias:
+            return alertas
+        
+        # Verificar cada medicamento
+        for med_data in medicamentos_lista:
+            medicamento = Medicamento.query.get(med_data['medicamento_id'])
             
-            db.session.add(receta)
-            db.session.flush()  # Para obtener el ID
-            
-            # Agregar medicamentos
-            if 'medicamentos' not in data or not data['medicamentos']:
-                return None, "Debe incluir al menos un medicamento"
-            
-            for med_data in data['medicamentos']:
-                medicamento = Medicamento.query.get(med_data['medicamento_id'])
-                if not medicamento:
-                    db.session.rollback()
-                    return None, f"Medicamento {med_data['medicamento_id']} no encontrado"
-                
-                detalle = RecetaDetalle(
-                    receta_id=receta.id,
-                    medicamento_id=med_data['medicamento_id'],
-                    dosis=med_data['dosis'],
-                    frecuencia=med_data['frecuencia'],
-                    duracion=med_data.get('duracion'),
-                    via_administracion=med_data.get('via_administracion'),
-                    indicaciones_especificas=med_data.get('indicaciones_especificas'),
-                    cantidad_prescrita=med_data.get('cantidad_prescrita')
-                )
-                db.session.add(detalle)
-            
-            db.session.commit()
-            
-            # Validar alergias
-            alertas = receta.validar_alergias()
-            
-            # Auditoría
-            log = LogAuditoria(
-                usuario_id=usuario_id,
-                accion='crear_receta',
-                tabla_afectada='recetas',
-                registro_id=receta.id,
-                detalles=f"Receta creada para paciente {paciente.nombre_completo}"
-            )
-            db.session.add(log)
-            db.session.commit()
-            
-            # Retornar receta con alertas si las hay
-            if alertas:
-                return receta, f"⚠️ ALERTAS DE ALERGIAS: {alertas}"
-            
-            return receta, None
-            
-        except Exception as e:
-            db.session.rollback()
-            return None, str(e)
+            if medicamento:
+                for alergia in alergias:
+                    # Buscar coincidencias (básico)
+                    if (alergia.descripcion.lower() in medicamento.nombre_generico.lower() or
+                        alergia.descripcion.lower() in (medicamento.nombre_comercial or '').lower()):
+                        
+                        alertas.append({
+                            'tipo': 'alergia',
+                            'severidad': 'alta',
+                            'medicamento': medicamento.nombre_generico,
+                            'mensaje': f'ALERTA: Paciente tiene alergia registrada a {alergia.descripcion}'
+                        })
+        
+        return alertas
     
     @staticmethod
     def generar_pdf(receta_id):
         """
-        Genera PDF de la receta
+        Genera PDF de la receta médica.
+        """
+        receta = Receta.query.get(receta_id)
         
-        Returns:
-            (bytes, str): (pdf_bytes, error)
-        """
-        try:
-            receta = Receta.query.get(receta_id)
-            if not receta:
-                return None, "Receta no encontrada"
-            
-            # Generar HTML de la receta
-            html_content = RecetaService._generar_html(receta)
-            
-            if not WEASYPRINT_DISPONIBLE:
-                # Modo desarrollo: retornar HTML
-                return html_content.encode('utf-8'), None
-            
-            # Generar PDF con WeasyPrint
-            pdf = HTML(string=html_content).write_pdf()
-            
-            return pdf, None
-            
-        except Exception as e:
-            return None, str(e)
-    
-    @staticmethod
-    def _generar_html(receta):
-        """
-        Genera HTML de la receta con diseño profesional
-        """
-        paciente = receta.paciente
+        if not receta:
+            raise ValueError('Receta no encontrada')
+        
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch)
+        story = []
+        styles = getSampleStyleSheet()
+        
+        # Estilos personalizados
+        style_title = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            textColor=colors.HexColor('#8B5CF6'),  # Lila
+            alignment=TA_CENTER,
+            spaceAfter=10
+        )
+        
+        style_subtitle = ParagraphStyle(
+            'CustomSubtitle',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.grey,
+            alignment=TA_CENTER,
+            spaceAfter=20
+        )
+        
+        style_rx = ParagraphStyle(
+            'RxStyle',
+            parent=styles['Heading2'],
+            fontSize=24,
+            textColor=colors.HexColor('#8B5CF6'),
+            spaceAfter=10
+        )
+        
+        # Encabezado
+        story.append(Paragraph("CLÍNICA FAMILIAR MEDGAR", style_title))
+        story.append(Paragraph("Dirección de la clínica • Tel: (502) 0000-0000", style_subtitle))
+        story.append(Spacer(1, 0.2*inch))
+        
+        # Información del médico
         medico = receta.medico
+        info_medico = f"<b>Dr(a). {medico.nombre_completo}</b><br/>"
+        info_medico += f"Registro Médico: [Número]<br/>"
         
-        # Cabecera
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="UTF-8">
-            <style>
-                @page {{
-                    size: letter;
-                    margin: 2cm;
-                }}
-                body {{
-                    font-family: 'Arial', sans-serif;
-                    color: #333;
-                    line-height: 1.6;
-                }}
-                .header {{
-                    text-align: center;
-                    border-bottom: 3px solid #B8A9D4;
-                    padding-bottom: 20px;
-                    margin-bottom: 30px;
-                }}
-                .clinic-name {{
-                    color: #B8A9D4;
-                    font-size: 24px;
-                    font-weight: bold;
-                    margin-bottom: 5px;
-                }}
-                .doctor-info {{
-                    font-size: 14px;
-                    color: #666;
-                }}
-                .section {{
-                    margin-bottom: 25px;
-                }}
-                .section-title {{
-                    background-color: #F5F3F9;
-                    color: #6B5B95;
-                    padding: 8px 12px;
-                    font-weight: bold;
-                    margin-bottom: 10px;
-                    border-left: 4px solid #B8A9D4;
-                }}
-                .patient-data {{
-                    display: flex;
-                    justify-content: space-between;
-                    margin-bottom: 10px;
-                }}
-                .data-row {{
-                    margin: 5px 0;
-                }}
-                .label {{
-                    font-weight: bold;
-                    color: #6B5B95;
-                }}
-                .rx-symbol {{
-                    font-size: 48px;
-                    color: #B8A9D4;
-                    font-weight: bold;
-                    margin: 20px 0;
-                }}
-                .medicamento {{
-                    margin-bottom: 20px;
-                    padding: 15px;
-                    background-color: #FAFAFA;
-                    border-left: 3px solid #B8A9D4;
-                }}
-                .med-nombre {{
-                    font-size: 16px;
-                    font-weight: bold;
-                    color: #333;
-                    margin-bottom: 8px;
-                }}
-                .med-detalle {{
-                    margin: 4px 0;
-                    padding-left: 15px;
-                }}
-                .indicaciones {{
-                    margin-top: 30px;
-                    padding: 15px;
-                    background-color: #F5F3F9;
-                    border-radius: 5px;
-                }}
-                .footer {{
-                    margin-top: 50px;
-                    text-align: center;
-                    border-top: 2px solid #E0E0E0;
-                    padding-top: 20px;
-                }}
-                .firma {{
-                    margin-top: 60px;
-                    text-align: center;
-                }}
-                .firma-linea {{
-                    border-top: 2px solid #333;
-                    width: 250px;
-                    margin: 0 auto 10px;
-                }}
-            </style>
-        </head>
-        <body>
-            <!-- Cabecera -->
-            <div class="header">
-                <div class="clinic-name">CLÍNICA MÉDICA MEDGAR</div>
-                <div class="doctor-info">
-                    {medico.nombre_completo}<br>
-                    Registro Médico: {medico.id}<br>
-                    Especialidad: Medicina General
-                </div>
-            </div>
-            
-            <!-- Fecha -->
-            <div style="text-align: right; margin-bottom: 20px;">
-                <strong>Fecha:</strong> {receta.fecha_emision.strftime('%d de %B de %Y')}
-            </div>
-            
-            <!-- Datos del Paciente -->
-            <div class="section">
-                <div class="section-title">DATOS DEL PACIENTE</div>
-                <div class="data-row">
-                    <span class="label">Nombre:</span> {paciente.nombre_completo}
-                </div>
-                <div class="data-row">
-                    <span class="label">Edad:</span> {paciente.edad} años
-                </div>
-                <div class="data-row">
-                    <span class="label">DPI:</span> {paciente.dpi or 'N/A'}
-                </div>
-            </div>
-            
-            <!-- Diagnóstico -->
-            {"<div class='section'><div class='section-title'>DIAGNÓSTICO</div><p>" + receta.diagnostico + "</p></div>" if receta.diagnostico else ""}
-            
-            <!-- Símbolo Rx -->
-            <div class="rx-symbol">℞</div>
-            
-            <!-- Medicamentos -->
-            <div class="section">
-        """
+        story.append(Paragraph(info_medico, styles['Normal']))
+        story.append(Spacer(1, 0.3*inch))
         
-        # Agregar cada medicamento
-        for i, detalle in enumerate(receta.medicamentos, 1):
+        # Información del paciente
+        paciente = receta.paciente
+        info_data = [
+            ['Fecha:', receta.fecha_emision.strftime('%d/%m/%Y')],
+            ['Paciente:', paciente.nombre_completo],
+            ['Edad:', f'{paciente.calcular_edad()} años'],
+            ['DPI:', paciente.dpi or 'No especificado']
+        ]
+        
+        info_table = Table(info_data, colWidths=[1.5*inch, 4*inch])
+        info_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        
+        story.append(info_table)
+        story.append(Spacer(1, 0.3*inch))
+        
+        # Símbolo Rx
+        story.append(Paragraph("℞", style_rx))
+        story.append(Spacer(1, 0.1*inch))
+        
+        # Medicamentos
+        contador = 1
+        for detalle in receta.detalles:
             med = detalle.medicamento
-            html += f"""
-                <div class="medicamento">
-                    <div class="med-nombre">{i}. {med.nombre_generico.upper()}</div>
-                    <div class="med-detalle"><strong>Presentación:</strong> {med.presentacion} {med.concentracion}</div>
-                    <div class="med-detalle"><strong>Dosis:</strong> {detalle.dosis}</div>
-                    <div class="med-detalle"><strong>Frecuencia:</strong> {detalle.frecuencia}</div>
-                    {"<div class='med-detalle'><strong>Duración:</strong> " + detalle.duracion + "</div>" if detalle.duracion else ""}
-                    {"<div class='med-detalle'><strong>Vía:</strong> " + detalle.via_administracion + "</div>" if detalle.via_administracion else ""}
-                    {"<div class='med-detalle' style='font-style: italic; margin-top: 5px;'>" + detalle.indicaciones_especificas + "</div>" if detalle.indicaciones_especificas else ""}
-                </div>
-            """
-        
-        html += """
-            </div>
-        """
+            
+            med_text = f"<b>{contador}. {med.nombre_generico}"
+            if med.nombre_comercial:
+                med_text += f" ({med.nombre_comercial})"
+            med_text += f"</b><br/>"
+            med_text += f"   {med.presentacion or ''} {med.concentracion or ''}<br/>"
+            med_text += f"   <b>Dosis:</b> {detalle.dosis}<br/>"
+            med_text += f"   <b>Frecuencia:</b> {detalle.frecuencia}<br/>"
+            
+            if detalle.duracion:
+                med_text += f"   <b>Duración:</b> {detalle.duracion}<br/>"
+            
+            if detalle.via_administracion:
+                med_text += f"   <b>Vía:</b> {detalle.via_administracion}<br/>"
+            
+            if detalle.indicaciones_especificas:
+                med_text += f"   <i>{detalle.indicaciones_especificas}</i><br/>"
+            
+            story.append(Paragraph(med_text, styles['Normal']))
+            story.append(Spacer(1, 0.15*inch))
+            contador += 1
         
         # Indicaciones generales
         if receta.indicaciones_generales:
-            html += f"""
-                <div class="indicaciones">
-                    <div class="section-title">INDICACIONES GENERALES</div>
-                    <p>{receta.indicaciones_generales}</p>
-                </div>
-            """
+            story.append(Spacer(1, 0.2*inch))
+            story.append(Paragraph("<b>INDICACIONES GENERALES:</b>", styles['Heading3']))
+            story.append(Paragraph(receta.indicaciones_generales, styles['Normal']))
         
-        # Firma
-        html += f"""
-            <div class="firma">
-                <div class="firma-linea"></div>
-                <strong>{medico.nombre_completo}</strong><br>
-                Registro Médico: {medico.id}
-            </div>
-            
-            <div class="footer">
-                <small>Esta receta es válida por 30 días desde su emisión</small>
-            </div>
-        </body>
-        </html>
-        """
+        # Espacio para firma
+        story.append(Spacer(1, 0.5*inch))
+        story.append(Paragraph("_" * 40, styles['Normal']))
+        story.append(Paragraph("Firma y sello del médico", styles['Normal']))
         
-        return html
+        # Generar PDF
+        doc.build(story)
+        buffer.seek(0)
+        return buffer
     
     @staticmethod
-    def desactivar_receta(receta_id, usuario_id):
-        """
-        Desactiva una receta (ya no se puede dispensar)
-        """
-        try:
-            receta = Receta.query.get(receta_id)
-            if not receta:
-                return False, "Receta no encontrada"
-            
-            receta.activa = False
-            db.session.commit()
-            
-            # Auditoría
-            log = LogAuditoria(
-                usuario_id=usuario_id,
-                accion='desactivar_receta',
-                tabla_afectada='recetas',
-                registro_id=receta.id,
-                detalles=f"Receta {receta_id} desactivada"
-            )
-            db.session.add(log)
-            db.session.commit()
-            
-            return True, "Receta desactivada"
-            
-        except Exception as e:
-            db.session.rollback()
-            return False, str(e)
+    def desactivar_receta(receta_id, motivo=None):
+        """Desactiva una receta (ya no se puede dispensar)"""
+        receta = Receta.query.get(receta_id)
+        
+        if not receta:
+            raise ValueError('Receta no encontrada')
+        
+        receta.activa = False
+        
+        if motivo:
+            receta.indicaciones_generales = f"{receta.indicaciones_generales}\n\nDESACTIVADA: {motivo}"
+        
+        db.session.commit()
+        
+        return receta.to_dict()
     
     @staticmethod
     def obtener_recetas_paciente(paciente_id, solo_activas=False):
-        """Obtiene todas las recetas de un paciente"""
+        """Obtiene historial de recetas de un paciente"""
         query = Receta.query.filter_by(paciente_id=paciente_id)
         
         if solo_activas:
             query = query.filter_by(activa=True)
         
-        return query.order_by(Receta.fecha_emision.desc()).all()
+        recetas = query.order_by(Receta.fecha_emision.desc()).all()
+        
+        return [r.to_dict(incluir_relaciones=True) for r in recetas]
