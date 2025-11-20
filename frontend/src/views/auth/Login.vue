@@ -108,21 +108,36 @@ async function handleLogin() {
   try {
     isLoading.value = true
 
+    console.log('🔐 Intentando login...', credentials.username)
+
     // Llamar al backend
     const response = await authAPI.login(credentials)
 
+    console.log('✅ Respuesta del servidor:', response.data)
+
     if (response.data.success) {
+      console.log('✅ Login exitoso, guardando datos...')
+      
       // Guardar datos de autenticación
       authStore.setAuth(response.data)
+
+      console.log('✅ Datos guardados, redirigiendo...')
 
       // Mostrar mensaje de éxito
       uiStore.showAlert('success', MESSAGES.LOGIN_SUCCESS)
 
       // Redirigir al dashboard
-      router.push('/dashboard')
+      console.log('🚀 Redirigiendo a /dashboard')
+      await router.push('/dashboard')
+      
+      console.log('✅ Redirección completada')
+    } else {
+      console.error('❌ Login falló:', response.data)
+      uiStore.showAlert('error', response.data.message || MESSAGES.LOGIN_ERROR)
     }
   } catch (error) {
-    console.error('Error al iniciar sesión:', error)
+    console.error('❌ Error al iniciar sesión:', error)
+    console.error('Detalles del error:', error.response?.data)
     
     const errorMessage = error.response?.data?.message || MESSAGES.LOGIN_ERROR
     uiStore.showAlert('error', errorMessage)
